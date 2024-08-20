@@ -163,7 +163,7 @@ fn print_throughput_stats(total_data_processed: usize, total_data_op: usize, tot
         total_bits
     );
     println!(
-        "Throughput: {:.2} Gb/s {:.0} Hz",
+        "Throughput: {:.2} Gb/s {:.0} ops",
         throughput_gbps, throughput_hz
     );
 }
@@ -242,7 +242,6 @@ fn main() {
     } else {
         arg = args[1].parse().expect("Invalid number for arg");
     }
-    println!("SM {} test", arg);
 
     match arg {
         0 => {
@@ -283,6 +282,7 @@ fn main() {
             // print_first_and_last_8(&c);
         }
         2 => {
+            println!("ECC test");
             let kernel_source = std::fs::read_to_string("./src/ecc-kernel.cl").unwrap();
             let b: [u32; 8] = [
                 0xb61cf540, 0x381e846e, 0x24830dd7, 0xea8195ec, 0xa6cd2f37, 0xcb1378a1, 0xf84d059d,
@@ -319,6 +319,7 @@ fn main() {
             // print_first_and_last_8(&cc);
         }
         3 => {
+            println!("SM {} test", arg);
             let kernel_source = std::fs::read_to_string("./src/sm3_kernel.cl").unwrap();
             let b: [u32; 16] = [0x61626380, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x18];
             let size_in_u32 = 1024 * 1024 * 16;
@@ -356,6 +357,7 @@ fn main() {
             // print_first_and_last_8(&cc);
         }
         4 => {
+            println!("SM {} test", arg);
             let kernel_source = std::fs::read_to_string("./src/sm4_kernel.cl").unwrap();
             let a: [u32; 32] = [
                 0xf12186f9, 0x41662b61, 0x5a6ab19a, 0x7ba92077, 0x367360f4, 0x776a0c61, 0xb6bb89b3,
@@ -403,6 +405,52 @@ fn main() {
 
             print_throughput_stats(total_data_processed, total_data_op, total_duration);
             // print_first_and_last_8(&cc);
+        }
+        512 => {
+            println!("kyber {} test", arg);
+            let kernel_source = std::fs::read_to_string("./src/kyber.cl").unwrap();
+            let b: [u32; 8] = [0, 0, 0, 0, 0, 0, 0, 0]; //as random later
+            let size_in_u32 = 8 * 4096 * 10;
+
+            // 尾部数据初始化
+            let mut bb: Vec<u32> = Vec::with_capacity(size_in_u32);
+            bb.extend(vec![0; size_in_u32 - b.len()]);
+            bb.extend(&b);
+
+            let mut cc: Vec<u32> = vec![0; size_in_u32 * 76]; //kyber-512 keylen 2432/4
+            let mut opencl_wrapper = OpenCLWrapper::new(0, 0, &kernel_source)
+                .expect("Failed to initialize OpenCL wrapper");
+
+            // 定义缓冲区的大小和标志
+            let sizes = vec![size_in_u32, size_in_u32 * 76];
+            let flags = vec![
+                opencl3::memory::CL_MEM_READ_ONLY,
+                opencl3::memory::CL_MEM_WRITE_ONLY,
+            ];
+            // 初始化缓冲区
+            let mut buffers: Vec<Buffer<cl_uint>> = opencl_wrapper
+                .initialize_buffers(&sizes, &flags)
+                .expect("Failed to initialize buffers.");
+            // 调用测试函数
+            let (total_duration, _total_data_processed, total_data_op) = test_opencl_kernel(
+                &mut opencl_wrapper,
+                &mut buffers,
+                &[&bb],
+                size_in_u32,
+                8,
+                256, //android is 8, cuda 256
+                &mut cc,
+            );
+            print_throughput_stats(10 * size_in_u32 * 76, total_data_op, total_duration);
+            /*
+            for (i, val) in cc.iter().take(608).enumerate() {
+                println!("cc[{}] = 0x{:08X}", i, val);
+            }
+            for (i, val) in cc.iter().skip(cc.len() - 608).enumerate() {
+                println!("cc[{}] = 0x{:08X}", i + cc.len() - 608, val);
+            }
+            */
+            println!("cc.len(): {}", cc.len());
         }
         _ => {
             println!("Invalid day...");
