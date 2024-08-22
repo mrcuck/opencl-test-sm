@@ -4,7 +4,7 @@
 
 #define KYBER_K 2
 #define __device__
-#define __constant__
+#define __constant__ __constant
 
 typedef signed char int8_t;
 typedef signed short int16_t;
@@ -439,6 +439,16 @@ __device__ uint64_t load64(const uint8_t *x) {
   return r;
 }
 
+__device__ uint64_t load64_g(__global const uint8_t *x) {
+  unsigned int i;
+  uint64_t r = 0;
+
+  for(i=0;i<8;i++)
+    r |= (uint64_t)x[i] << 8*i;
+
+  return r;
+}
+
 /*************************************************
 * Name:        store64
 *
@@ -448,6 +458,13 @@ __device__ uint64_t load64(const uint8_t *x) {
 *              - uint64_t u: input 64-bit unsigned integer
 **************************************************/
 __device__ void store64(uint8_t *x, uint64_t u) {
+  unsigned int i;
+
+  for(i=0;i<8;i++)
+    x[i] = u >> 8*i;
+}
+
+__device__ void store64_g(__global uint8_t *x, uint64_t u) {
   unsigned int i;
 
   for(i=0;i<8;i++)
@@ -894,6 +911,32 @@ __device__ void keccak_absorb_once(uint64_t *s,
   s[(r-1)/8] ^= 1ULL << 63;
 }
 
+__device__ void keccak_absorb_once_g(uint64_t *s,
+                               unsigned int r,
+                               __global const uint8_t *in,
+                               size_t inlen,
+                               uint8_t p)
+{
+  unsigned int i;
+
+  for(i=0;i<25;i++)
+    s[i] = 0;
+
+  while(inlen >= r) {
+    for(i=0;i<r/8;i++)
+      s[i] ^= load64_g(in+8*i);
+    in += r;
+    inlen -= r;
+    KeccakF1600_StatePermute(s);
+  }
+
+  for(i=0;i<inlen;i++)
+    s[i/8] ^= (uint64_t)in[i] << 8*(i%8);
+
+  s[i/8] ^= (uint64_t)p << 8*(i%8);
+  s[(r-1)/8] ^= 1ULL << 63;
+}
+
 /*************************************************
 * Name:        keccak_squeezeblocks
 *
@@ -1085,29 +1128,6 @@ __device__ void shake256_squeezeblocks(uint8_t *out, size_t nblocks, keccak_stat
 }
 
 /*************************************************
-* Name:        shake128
-*
-* Description: SHAKE128 XOF with non-incremental API
-*
-* Arguments:   - uint8_t *out: pointer to output
-*              - size_t outlen: requested output length in bytes
-*              - const uint8_t *in: pointer to input
-*              - size_t inlen: length of input in bytes
-**************************************************/
-__device__ void shake128(uint8_t out[0], size_t outlen, const uint8_t in[0], size_t inlen)
-{
-  size_t nblocks;
-  keccak_state state;
-
-  shake128_absorb_once(&state, in, inlen);
-  nblocks = outlen/SHAKE128_RATE;
-  shake128_squeezeblocks(out, nblocks, &state);
-  outlen -= nblocks*SHAKE128_RATE;
-  out += nblocks*SHAKE128_RATE;
-  shake128_squeeze(out, outlen, &state);
-}
-
-/*************************************************
 * Name:        shake256
 *
 * Description: SHAKE256 XOF with non-incremental API
@@ -1139,15 +1159,15 @@ __device__ void shake256(uint8_t *out, size_t outlen, const uint8_t *in, size_t 
 *              - const uint8_t *in: pointer to input
 *              - size_t inlen: length of input in bytes
 **************************************************/
-__device__ void sha3_256(uint8_t *h, const uint8_t *in, size_t inlen)
+__device__ void sha3_256(__global uint8_t *h, __global const uint8_t *in, size_t inlen)
 {
   unsigned int i;
   uint64_t s[25];
 
-  keccak_absorb_once(s, SHA3_256_RATE, in, inlen, 0x06);
+  keccak_absorb_once_g(s, SHA3_256_RATE, in, inlen, 0x06);
   KeccakF1600_StatePermute(s);
   for(i=0;i<4;i++)
-    store64(h+8*i,s[i]);
+    store64_g(h+8*i,s[i]);
 }
 
 /*************************************************
@@ -1359,7 +1379,7 @@ __device__ void poly_decompress(poly *r, const uint8_t a[KYBER_POLYCOMPRESSEDBYT
 *                            (needs space for KYBER_POLYBYTES bytes)
 *              - const poly *a: pointer to input polynomial
 **************************************************/
-__device__ void poly_tobytes(uint8_t *r, const poly *a)
+__device__ void poly_tobytes(__global uint8_t *r, const poly *a)
 {
   unsigned int i;
   uint16_t t0, t1;
@@ -1731,7 +1751,7 @@ __device__ void polyvec_decompress(polyvec *r, const uint8_t a[KYBER_POLYVECCOMP
 *                            (needs space for KYBER_POLYVECBYTES)
 *              - const polyvec *a: pointer to input vector of polynomials
 **************************************************/
-__device__ void polyvec_tobytes(uint8_t *r, const polyvec *a)
+__device__ void polyvec_tobytes(__global uint8_t *r, const polyvec *a)
 {
   unsigned int i;
   for(i=0;i<KYBER_K;i++)
@@ -1853,7 +1873,7 @@ __device__ void polyvec_add(polyvec *r, const polyvec *a, const polyvec *b)
 *              polyvec *pk: pointer to the input public-key polyvec
 *              const uint8_t *seed: pointer to the input public seed
 **************************************************/
-__device__ void pack_pk(uint8_t *r,
+__device__ void pack_pk(__global uint8_t *r,
                     polyvec *pk,
                     const uint8_t *seed)
 {
@@ -1891,7 +1911,7 @@ __device__ void unpack_pk(polyvec *pk,
 * Arguments:   - uint8_t *r: pointer to output serialized secret key
 *              - polyvec *sk: pointer to input vector of polynomials (secret key)
 **************************************************/
-__device__ void pack_sk(uint8_t *r, polyvec *sk)
+__device__ void pack_sk(__global uint8_t *r, polyvec *sk)
 {
   polyvec_tobytes(r, sk);
 }
@@ -2036,11 +2056,11 @@ __device__ void gen_matrix(polyvec *a, const uint8_t seed[KYBER_SYMBYTES], int t
 *              - uint8_t *sk: pointer to output private key
                               (of length KYBER_INDCPA_SECRETKEYBYTES bytes)
 **************************************************/
-__device__ void indcpa_keypair(uint8_t *pk,
-                    uint8_t *sk)
+__device__ void indcpa_keypair(__global uint8_t *pk,
+                    __global uint8_t *sk)
 {
   unsigned int i;
-  uint8_t buf[2*KYBER_SYMBYTES];
+  uint8_t buf[2*KYBER_SYMBYTES] = {0};
   uint8_t nonce = 0;
   polyvec a[KYBER_K], e, pkpv, skpv;
 
@@ -2086,12 +2106,12 @@ __device__ void indcpa_keypair(uint8_t *pk,
 *
 * Returns 0 (success)
 **************************************************/
-__device__ void crypto_kem_keypair(uint32_t *pk32,
-                       uint32_t *sk32)
+__device__ void crypto_kem_keypair(__global uint32_t *pk32,
+                       __global uint32_t *sk32)
 {
   size_t i;
-  uint8_t *pk = pk32;
-  uint8_t *sk = sk32;
+  __global uint8_t *pk = pk32;
+  __global uint8_t *sk = sk32;
   indcpa_keypair(pk, sk);
   for(i=0;i<KYBER_INDCPA_PUBLICKEYBYTES;i++)
     sk[i+KYBER_INDCPA_SECRETKEYBYTES] = pk[i];

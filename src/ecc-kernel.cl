@@ -3,7 +3,7 @@
  */
 
 #define DECLSPEC
-#define IS_NV //android forbid
+//#define IS_NV //android forbid
 
 #define PRIVATE_AS
 
@@ -179,8 +179,6 @@ typedef struct secp256k1
   u32 xy[96]; // pre-computed points: (x1,y1,-y1),(x3,y3,-y3),(x5,y5,-y5),(x7,y7,-y7)
 
 } secp256k1_t;
-
-DECLSPEC void point_mul (u32 *r, const u32 *k, GLOBAL_AS const secp256k1_t *tmps);
 
 
 DECLSPEC u32 sub (u32 *r, const u32 *a, const u32 *b)
@@ -975,7 +973,7 @@ DECLSPEC void point_add (u32 *x1, u32 *y1, u32 *z1, u32 *x2, u32 *y2) // z2 = 1
   z1[7] = t8[7];
 }
 
-DECLSPEC void point_mul (u32 *r, const u32 *k, GLOBAL_AS const secp256k1_t *tmps)
+DECLSPEC void point_mul (__global u32 *r, __global const u32 *k, GLOBAL_AS const secp256k1_t *tmps)
 {
   u32 n[9];
 

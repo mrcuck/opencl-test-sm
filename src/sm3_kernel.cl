@@ -60,8 +60,8 @@ __kernel void compute(__global const unsigned int* input, __global unsigned int*
     // 这样可以减少局部内存的使用，减轻内存压力
     unsigned int W[68];
 
-    const unsigned int* currentInput = input + gid * 16;
-    unsigned int* currentHash = hash + gid * 8;
+    __global const unsigned int* currentInput = input + gid * 16;
+    __global unsigned int* currentHash = hash + gid * 8;
 
     // 使用vload4加载数据，每次加载4个unsigned int
     for (int i = 0; i < 16; i += 4) {

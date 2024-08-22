@@ -163,7 +163,7 @@ fn print_throughput_stats(total_data_processed: usize, total_data_op: usize, tot
         total_bits
     );
     println!(
-        "Throughput: {:.2} Gb/s {:.0} ops",
+        "Throughput: {:.3} Gb/s {:.0} ops",
         throughput_gbps, throughput_hz
     );
 }
@@ -288,7 +288,7 @@ fn main() {
                 0xb61cf540, 0x381e846e, 0x24830dd7, 0xea8195ec, 0xa6cd2f37, 0xcb1378a1, 0xf84d059d,
                 0x2d5dc2a3,
             ];
-            let size_in_u32 = 1024 * 1024 * 4; // sm2_kernel.cl - 1024 * 4 right but super slow
+            let size_in_u32 = 1024 * 1024; // sm2_kernel.cl - 1024 * 4 right but super slow
 
             let bb: Vec<u32> = b.iter().copied().cycle().take(size_in_u32).collect();
             let mut cc: Vec<u32> = vec![0; size_in_u32 * 2];
@@ -312,17 +312,17 @@ fn main() {
                 &[&bb],
                 size_in_u32,
                 8,
-                256, //android is 8, cuda 256
+                128, //android is 8, arm 128, cuda 256(IS_NV)
                 &mut cc,
             );
             print_throughput_stats(total_data_processed, total_data_op, total_duration);
-            // print_first_and_last_8(&cc);
+            print_first_and_last_8(&cc);
         }
         3 => {
             println!("SM {} test", arg);
             let kernel_source = std::fs::read_to_string("./src/sm3_kernel.cl").unwrap();
             let b: [u32; 16] = [0x61626380, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x18];
-            let size_in_u32 = 1024 * 1024 * 16;
+            let size_in_u32 = 1024 * 1024 * 32;
 
             // 尾部数据初始化
             let mut bb: Vec<u32> = Vec::with_capacity(size_in_u32);
@@ -350,11 +350,11 @@ fn main() {
                 &[&bb],
                 size_in_u32,
                 16,
-                256, //android is 8, cuda 256
+                128, //android is 8, arm 128, cuda 256
                 &mut cc,
             );
             print_throughput_stats(total_data_processed, total_data_op, total_duration);
-            // print_first_and_last_8(&cc);
+            print_first_and_last_8(&cc);
         }
         4 => {
             println!("SM {} test", arg);
@@ -399,12 +399,12 @@ fn main() {
                 &[&a, &bb],
                 size_in_u32,
                 4,
-                256, //android is 8, cuda 256
+                128, //android is 8, arm 128, cuda 256
                 &mut cc,
             );
 
             print_throughput_stats(total_data_processed, total_data_op, total_duration);
-            // print_first_and_last_8(&cc);
+            print_first_and_last_8(&cc);
         }
         512 => {
             println!("kyber {} test", arg);
@@ -438,7 +438,7 @@ fn main() {
                 &[&bb],
                 size_in_u32,
                 8,
-                256, //android is 8, cuda 256
+                8, //arm is 8, cuda 256
                 &mut cc,
             );
             print_throughput_stats(10 * size_in_u32 * 76, total_data_op, total_duration);
