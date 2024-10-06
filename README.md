@@ -23,7 +23,7 @@ cargo run + args或 cargo run --release + args
 
 ![](https://github.com/mrcuck/opencl-test-sm/blob/main/kyber.png)
 
-- ### dilithium算法移植自dilithium3.1，密钥对计算21万次/秒
+- ### dilithium算法移植自dilithium3.1，密钥对计算25万次/秒
 
 ![](https://github.com/mrcuck/opencl-test-sm/blob/main/dilithium.png)
 
