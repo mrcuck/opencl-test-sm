@@ -1,7 +1,7 @@
 # opencl-test-sm
 
 compile:
-cargo build
+cargo build --release
 
 run test: ecc/sm3/sm4
 

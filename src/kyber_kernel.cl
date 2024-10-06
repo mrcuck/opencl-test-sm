@@ -1,11 +1,8 @@
-/**
- * License.....: MIT
- */
-
-#define KYBER_K 2
-#define __device__
-#define __constant__ __constant
-
+#ifdef CL_TEST
+#include <stddef.h> //size_t
+#include <stdint.h>
+#else
+#define size_t unsigned int
 typedef signed char int8_t;
 typedef signed short int16_t;
 typedef signed int int32_t;
@@ -14,6 +11,15 @@ typedef unsigned char uint8_t;
 typedef unsigned short uint16_t;
 typedef unsigned int uint32_t;
 typedef unsigned long uint64_t;
+#endif
+
+#define NO_RANDOM
+
+#ifndef KYBER_K
+#define KYBER_K 2	/* Change this for different security strengths */
+#endif
+
+//#define KYBER_90S	/* Uncomment this if you want the 90S variant */
 
 /* Don't change parameters below this line */
 #if   (KYBER_K == 2)
@@ -44,8 +50,8 @@ typedef unsigned long uint64_t;
 #define KYBER_SYMBYTES 32   /* size in bytes of hashes, and seeds */
 #define KYBER_SSBYTES  32   /* size in bytes of shared key */
 
-#define KYBER_POLYBYTES   384
-#define KYBER_POLYVECBYTES  (KYBER_K * KYBER_POLYBYTES)
+#define KYBER_POLYBYTES		384
+#define KYBER_POLYVECBYTES	(KYBER_K * KYBER_POLYBYTES)
 
 #if KYBER_K == 2
 #define KYBER_ETA1 3
@@ -73,11 +79,86 @@ typedef unsigned long uint64_t;
 #define KYBER_SECRETKEYBYTES  (KYBER_INDCPA_SECRETKEYBYTES + KYBER_INDCPA_PUBLICKEYBYTES + 2*KYBER_SYMBYTES)
 #define KYBER_CIPHERTEXTBYTES (KYBER_INDCPA_BYTES)
 
+
+#define CRYPTO_SECRETKEYBYTES  KYBER_SECRETKEYBYTES
+#define CRYPTO_PUBLICKEYBYTES  KYBER_PUBLICKEYBYTES
+#define CRYPTO_CIPHERTEXTBYTES KYBER_CIPHERTEXTBYTES
+#define CRYPTO_BYTES           KYBER_SSBYTES
+
+#if   (KYBER_K == 2)
+#ifdef KYBER_90S
+#define CRYPTO_ALGNAME "Kyber512-90s"
+#else
+#define CRYPTO_ALGNAME "Kyber512"
+#endif
+#elif (KYBER_K == 3)
+#ifdef KYBER_90S
+#define CRYPTO_ALGNAME "Kyber768-90s"
+#else
+#define CRYPTO_ALGNAME "Kyber768"
+#endif
+#elif (KYBER_K == 4)
+#ifdef KYBER_90S
+#define CRYPTO_ALGNAME "Kyber1024-90s"
+#else
+#define CRYPTO_ALGNAME "Kyber1024"
+#endif
+#endif
+
+/*
+ * Elements of R_q = Z_q[X]/(X^n + 1). Represents polynomial
+ * coeffs[0] + X*coeffs[1] + X^2*xoeffs[2] + ... + X^{n-1}*coeffs[n-1]
+ */
+typedef struct{
+  int16_t coeffs[KYBER_N];
+} poly;
+
+#define poly_compress KYBER_NAMESPACE(poly_compress)
+void poly_compress(uint8_t r[KYBER_POLYCOMPRESSEDBYTES], const poly *a);
+#define poly_decompress KYBER_NAMESPACE(poly_decompress)
+void poly_decompress(poly *r, const uint8_t a[KYBER_POLYCOMPRESSEDBYTES]);
+
+#define poly_tobytes KYBER_NAMESPACE(poly_tobytes)
+void poly_tobytes(__generic uint8_t r[KYBER_POLYBYTES], const poly *a);
+#define poly_frombytes KYBER_NAMESPACE(poly_frombytes)
+void poly_frombytes(poly *r, const __generic uint8_t a[KYBER_POLYBYTES]);
+
+#define poly_frommsg KYBER_NAMESPACE(poly_frommsg)
+void poly_frommsg(poly *r, const uint8_t msg[KYBER_INDCPA_MSGBYTES]);
+#define poly_tomsg KYBER_NAMESPACE(poly_tomsg)
+void poly_tomsg(uint8_t msg[KYBER_INDCPA_MSGBYTES], const poly *r);
+
+#define poly_getnoise_eta1 KYBER_NAMESPACE(poly_getnoise_eta1)
+void poly_getnoise_eta1(poly *r, const __generic uint8_t seed[KYBER_SYMBYTES], uint8_t nonce);
+
+#define poly_getnoise_eta2 KYBER_NAMESPACE(poly_getnoise_eta2)
+void poly_getnoise_eta2(poly *r, const uint8_t seed[KYBER_SYMBYTES], uint8_t nonce);
+
+#define poly_ntt KYBER_NAMESPACE(poly_ntt)
+void poly_ntt(poly *r);
+#define poly_invntt_tomont KYBER_NAMESPACE(poly_invntt_tomont)
+void poly_invntt_tomont(poly *r);
+#define poly_basemul_montgomery KYBER_NAMESPACE(poly_basemul_montgomery)
+void poly_basemul_montgomery(poly *r, const poly *a, const poly *b);
+#define poly_tomont KYBER_NAMESPACE(poly_tomont)
+void poly_tomont(poly *r);
+
+#define poly_reduce KYBER_NAMESPACE(poly_reduce)
+void poly_reduce(poly *r);
+
+#define poly_add KYBER_NAMESPACE(poly_add)
+void poly_add(poly *r, const poly *a, const poly *b);
+#define poly_sub KYBER_NAMESPACE(poly_sub)
+void poly_sub(poly *r, const poly *a, const poly *b);
+
 #define MONT -1044 // 2^16 mod q
 #define QINV -3327 // q^-1 mod 2^16
 
 #define montgomery_reduce KYBER_NAMESPACE(montgomery_reduce)
+int16_t montgomery_reduce(int32_t a);
+
 #define barrett_reduce KYBER_NAMESPACE(barrett_reduce)
+int16_t barrett_reduce(int16_t a);
 
 /*************************************************
 * Name:        montgomery_reduce
@@ -90,7 +171,7 @@ typedef unsigned long uint64_t;
 *
 * Returns:     integer in {-q+1,...,q-1} congruent to a * R^-1 modulo q.
 **************************************************/
-__device__ int16_t montgomery_reduce(int32_t a)
+int16_t montgomery_reduce(int32_t a)
 {
   int16_t t;
 
@@ -109,7 +190,7 @@ __device__ int16_t montgomery_reduce(int32_t a)
 *
 * Returns:     integer in {-(q-1)/2,...,(q-1)/2} congruent to a modulo q.
 **************************************************/
-__device__ int16_t barrett_reduce(int16_t a) {
+int16_t barrett_reduce(int16_t a) {
   int16_t t;
   const int16_t v = ((1<<26) + KYBER_Q/2)/KYBER_Q;
 
@@ -118,13 +199,20 @@ __device__ int16_t barrett_reduce(int16_t a) {
   return a - t;
 }
 
+
 #define zetas KYBER_NAMESPACE(zetas)
+extern __constant int16_t zetas[128];
 
 #define ntt KYBER_NAMESPACE(ntt)
-#define invntt KYBER_NAMESPACE(invntt)
-#define basemul KYBER_NAMESPACE(basemul)
+void ntt(__generic int16_t poly[256]);
 
-__constant__ int16_t zetas[128] = {
+#define invntt KYBER_NAMESPACE(invntt)
+void invntt(__generic int16_t poly[256]);
+
+#define basemul KYBER_NAMESPACE(basemul)
+void basemul(__generic int16_t r[2], const __generic int16_t a[2], const __generic int16_t b[2], int16_t zeta);
+
+__constant int16_t zetas[128] = {
   -1044,  -758,  -359, -1517,  1493,  1422,   287,   202,
    -171,   622,  1577,   182,   962, -1202, -1474,  1468,
     573, -1325,   264,   383,  -829,  1458, -1602,  -130,
@@ -153,7 +241,7 @@ __constant__ int16_t zetas[128] = {
 *
 * Returns 16-bit integer congruent to a*b*R^{-1} mod q
 **************************************************/
-__device__ int16_t fqmul(int16_t a, int16_t b) {
+static int16_t fqmul(int16_t a, int16_t b) {
   return montgomery_reduce((int32_t)a*b);
 }
 
@@ -165,7 +253,7 @@ __device__ int16_t fqmul(int16_t a, int16_t b) {
 *
 * Arguments:   - int16_t r[256]: pointer to input/output vector of elements of Zq
 **************************************************/
-__device__ void ntt(int16_t *r) {
+void ntt(__generic int16_t r[256]) {
   unsigned int len, start, j, k;
   int16_t t, zeta;
 
@@ -191,7 +279,7 @@ __device__ void ntt(int16_t *r) {
 *
 * Arguments:   - int16_t r[256]: pointer to input/output vector of elements of Zq
 **************************************************/
-__device__ void invntt(int16_t r[256]) {
+void invntt(__generic int16_t r[256]) {
   unsigned int start, len, j, k;
   int16_t t, zeta;
   const int16_t f = 1441; // mont^2/128
@@ -224,7 +312,7 @@ __device__ void invntt(int16_t r[256]) {
 *              - const int16_t b[2]: pointer to the second factor
 *              - int16_t zeta: integer defining the reduction polynomial
 **************************************************/
-__device__ void basemul(int16_t *r, const int16_t *a, const int16_t *b, int16_t zeta)
+void basemul(__generic int16_t r[2], const __generic int16_t a[2], const __generic int16_t b[2], int16_t zeta)
 {
   r[0]  = fqmul(a[1], b[1]);
   r[0]  = fqmul(r[0], zeta);
@@ -233,31 +321,12 @@ __device__ void basemul(int16_t *r, const int16_t *a, const int16_t *b, int16_t 
   r[1] += fqmul(a[1], b[0]);
 }
 
+
 #define poly_cbd_eta1 KYBER_NAMESPACE(poly_cbd_eta1)
+void poly_cbd_eta1(poly *r, const uint8_t buf[KYBER_ETA1*KYBER_N/4]);
+
 #define poly_cbd_eta2 KYBER_NAMESPACE(poly_cbd_eta2)
-
-
-typedef struct{
-  int16_t coeffs[KYBER_N];
-} poly;
-
-typedef struct{
-  poly vec[KYBER_K];
-} polyvec;
-
-void polyvec_zero(polyvec *pv) {
-    for (int i = 0; i < KYBER_K; i++) {
-        for (int j = 0; j < KYBER_N; j++) {
-            pv->vec[i].coeffs[j] = j;
-        }
-    }
-}
-
-void poly_zero(poly *p) {
-    for (int i = 0; i < KYBER_N; i++) {
-        p->coeffs[i] = i;
-    }
-}
+void poly_cbd_eta2(poly *r, const uint8_t buf[KYBER_ETA2*KYBER_N/4]);
 
 /*************************************************
 * Name:        load32_littleendian
@@ -269,7 +338,7 @@ void poly_zero(poly *p) {
 *
 * Returns 32-bit unsigned integer loaded from x
 **************************************************/
-__device__ uint32_t load32_littleendian(const uint8_t *x)
+static uint32_t load32_littleendian(const uint8_t x[4])
 {
   uint32_t r;
   r  = (uint32_t)x[0];
@@ -291,7 +360,7 @@ __device__ uint32_t load32_littleendian(const uint8_t *x)
 * Returns 32-bit unsigned integer loaded from x (most significant byte is zero)
 **************************************************/
 #if KYBER_ETA1 == 3
-__device__ uint32_t load24_littleendian(const uint8_t *x)
+static uint32_t load24_littleendian(const uint8_t x[3])
 {
   uint32_t r;
   r  = (uint32_t)x[0];
@@ -312,7 +381,7 @@ __device__ uint32_t load24_littleendian(const uint8_t *x)
 * Arguments:   - poly *r: pointer to output polynomial
 *              - const uint8_t *buf: pointer to input byte array
 **************************************************/
-__device__ void cbd2(poly *r, const uint8_t *buf)
+static void cbd2(poly *r, const uint8_t buf[2*KYBER_N/4])
 {
   unsigned int i,j;
   uint32_t t,d;
@@ -343,7 +412,7 @@ __device__ void cbd2(poly *r, const uint8_t *buf)
 *              - const uint8_t *buf: pointer to input byte array
 **************************************************/
 #if KYBER_ETA1 == 3
-__device__ void cbd3(poly *r, const uint8_t *buf)
+static void cbd3(poly *r, const uint8_t buf[3*KYBER_N/4])
 {
   unsigned int i,j;
   uint32_t t,d;
@@ -364,7 +433,7 @@ __device__ void cbd3(poly *r, const uint8_t *buf)
 }
 #endif
 
-__device__ void poly_cbd_eta1(poly *r, const uint8_t *buf)
+void poly_cbd_eta1(poly *r, const uint8_t buf[KYBER_ETA1*KYBER_N/4])
 {
 #if KYBER_ETA1 == 2
   cbd2(r, buf);
@@ -375,7 +444,7 @@ __device__ void poly_cbd_eta1(poly *r, const uint8_t *buf)
 #endif
 }
 
-__device__ void poly_cbd_eta2(poly *r, const uint8_t buf[KYBER_ETA2*KYBER_N/4])
+void poly_cbd_eta2(poly *r, const uint8_t buf[KYBER_ETA2*KYBER_N/4])
 {
 #if KYBER_ETA2 == 2
   cbd2(r, buf);
@@ -384,41 +453,55 @@ __device__ void poly_cbd_eta2(poly *r, const uint8_t buf[KYBER_ETA2*KYBER_N/4])
 #endif
 }
 
-
 #define SHAKE128_RATE 168
 #define SHAKE256_RATE 136
 #define SHA3_256_RATE 136
 #define SHA3_512_RATE 72
+
+#define FIPS202_NAMESPACE(s) pqcrystals_kyber_fips202_ref_##s
 
 typedef struct {
   uint64_t s[25];
   unsigned int pos;
 } keccak_state;
 
+#define shake128_init FIPS202_NAMESPACE(shake128_init)
+void shake128_init(keccak_state *state);
+#define shake128_absorb FIPS202_NAMESPACE(shake128_absorb)
+void shake128_absorb(keccak_state *state, const uint8_t *in, size_t inlen);
+#define shake128_finalize FIPS202_NAMESPACE(shake128_finalize)
+void shake128_finalize(keccak_state *state);
+#define shake128_squeeze FIPS202_NAMESPACE(shake128_squeeze)
+void shake128_squeeze(uint8_t *out, size_t outlen, keccak_state *state);
+#define shake128_absorb_once FIPS202_NAMESPACE(shake128_absorb_once)
+void shake128_absorb_once(keccak_state *state, const uint8_t *in, size_t inlen);
+#define shake128_squeezeblocks FIPS202_NAMESPACE(shake128_squeezeblocks)
+void shake128_squeezeblocks(uint8_t *out, size_t nblocks, keccak_state *state);
+
+#define shake256_init FIPS202_NAMESPACE(shake256_init)
+void shake256_init(keccak_state *state);
+#define shake256_absorb FIPS202_NAMESPACE(shake256_absorb)
+void shake256_absorb(keccak_state *state, const uint8_t *in, size_t inlen);
+#define shake256_finalize FIPS202_NAMESPACE(shake256_finalize)
+void shake256_finalize(keccak_state *state);
+#define shake256_squeeze FIPS202_NAMESPACE(shake256_squeeze)
+void shake256_squeeze(uint8_t *out, size_t outlen, keccak_state *state);
+#define shake256_absorb_once FIPS202_NAMESPACE(shake256_absorb_once)
+void shake256_absorb_once(keccak_state *state, const uint8_t *in, size_t inlen);
+#define shake256_squeezeblocks FIPS202_NAMESPACE(shake256_squeezeblocks)
+void shake256_squeezeblocks(uint8_t *out, size_t nblocks,  keccak_state *state);
+
+#define shake128 FIPS202_NAMESPACE(shake128)
+void shake128(uint8_t *out, size_t outlen, const uint8_t *in, size_t inlen);
+#define shake256 FIPS202_NAMESPACE(shake256)
+void shake256(uint8_t *out, size_t outlen, const uint8_t *in, size_t inlen);
+#define sha3_256 FIPS202_NAMESPACE(sha3_256)
+void sha3_256(__generic uint8_t h[32], const uint8_t *in, size_t inlen);
+#define sha3_512 FIPS202_NAMESPACE(sha3_512)
+void sha3_512(uint8_t h[64], const uint8_t *in, size_t inlen);
+
 #define NROUNDS 24
 #define ROL(a, offset) ((a << offset) ^ (a >> (64-offset)))
-
-__device__ void dumpd (const char *title, void *data, int len)
-{
-    int j = 0;
-    unsigned char *ptr = (unsigned char *)data;
-
-    printf ("++++++++++++++++[%s](%d bytes)++++++++++++++++", title, len);
-
-    if (data == NULL) {
-        printf ("data is null\n");
-    }
-
-    for (j = 0; j < len; j++) {
-        if (j % 16 == 0) {
-            printf ("\n");
-        }
-
-        printf ("%02X ", ptr[j]);
-    }
-
-    printf ("\n");
-}
 
 /*************************************************
 * Name:        load64
@@ -429,17 +512,7 @@ __device__ void dumpd (const char *title, void *data, int len)
 *
 * Returns the loaded 64-bit unsigned integer
 **************************************************/
-__device__ uint64_t load64(const uint8_t *x) {
-  unsigned int i;
-  uint64_t r = 0;
-
-  for(i=0;i<8;i++)
-    r |= (uint64_t)x[i] << 8*i;
-
-  return r;
-}
-
-__device__ uint64_t load64_g(__global const uint8_t *x) {
+static uint64_t load64(const __generic uint8_t x[8]) {
   unsigned int i;
   uint64_t r = 0;
 
@@ -457,14 +530,7 @@ __device__ uint64_t load64_g(__global const uint8_t *x) {
 * Arguments:   - uint8_t *x: pointer to the output byte array (allocated)
 *              - uint64_t u: input 64-bit unsigned integer
 **************************************************/
-__device__ void store64(uint8_t *x, uint64_t u) {
-  unsigned int i;
-
-  for(i=0;i<8;i++)
-    x[i] = u >> 8*i;
-}
-
-__device__ void store64_g(__global uint8_t *x, uint64_t u) {
+static void store64(__generic uint8_t x[8], uint64_t u) {
   unsigned int i;
 
   for(i=0;i<8;i++)
@@ -472,7 +538,7 @@ __device__ void store64_g(__global uint8_t *x, uint64_t u) {
 }
 
 /* Keccak round constants */
-__constant__ uint64_t KeccakF_RoundConstants[NROUNDS] = {
+__constant uint64_t KeccakF_RoundConstants[NROUNDS] = {
   (uint64_t)0x0000000000000001ULL,
   (uint64_t)0x0000000000008082ULL,
   (uint64_t)0x800000000000808aULL,
@@ -506,7 +572,7 @@ __constant__ uint64_t KeccakF_RoundConstants[NROUNDS] = {
 *
 * Arguments:   - uint64_t *state: pointer to input/output Keccak state
 **************************************************/
-__device__ void KeccakF1600_StatePermute(uint64_t *state)
+static void KeccakF1600_StatePermute(__generic uint64_t state[25])
 {
         int round;
 
@@ -777,7 +843,7 @@ __device__ void KeccakF1600_StatePermute(uint64_t *state)
 *
 * Arguments:   - uint64_t *s: pointer to Keccak state
 **************************************************/
-static void keccak_init(uint64_t s[25])
+static void keccak_init(__generic uint64_t s[25])
 {
   unsigned int i;
   for(i=0;i<25;i++)
@@ -797,7 +863,7 @@ static void keccak_init(uint64_t s[25])
 *
 * Returns new position pos in current block
 **************************************************/
-__device__ unsigned int keccak_absorb(uint64_t s[25],
+static unsigned int keccak_absorb(__generic uint64_t s[25],
                                   unsigned int pos,
                                   unsigned int r,
                                   const uint8_t *in,
@@ -829,7 +895,7 @@ __device__ unsigned int keccak_absorb(uint64_t s[25],
 *              - unsigned int r: rate in bytes (e.g., 168 for SHAKE128)
 *              - uint8_t p: domain separation byte
 **************************************************/
-static void keccak_finalize(uint64_t s[25], unsigned int pos, unsigned int r, uint8_t p)
+static void keccak_finalize(__generic uint64_t s[25], unsigned int pos, unsigned int r, uint8_t p)
 {
   s[pos/8] ^= (uint64_t)p << 8*(pos%8);
   s[r/8-1] ^= 1ULL << 63;
@@ -850,9 +916,9 @@ static void keccak_finalize(uint64_t s[25], unsigned int pos, unsigned int r, ui
 *
 * Returns new position pos in current block
 **************************************************/
-__device__ unsigned int keccak_squeeze(uint8_t *out,
+static unsigned int keccak_squeeze(uint8_t *out,
                                    size_t outlen,
-                                   uint64_t *s,
+                                   __generic uint64_t s[25],
                                    unsigned int pos,
                                    unsigned int r)
 {
@@ -885,7 +951,7 @@ __device__ unsigned int keccak_squeeze(uint8_t *out,
 *              - size_t inlen: length of input in bytes
 *              - uint8_t p: domain-separation byte for different Keccak-derived functions
 **************************************************/
-__device__ void keccak_absorb_once(uint64_t *s,
+static void keccak_absorb_once(__generic uint64_t s[25],
                                unsigned int r,
                                const uint8_t *in,
                                size_t inlen,
@@ -911,32 +977,6 @@ __device__ void keccak_absorb_once(uint64_t *s,
   s[(r-1)/8] ^= 1ULL << 63;
 }
 
-__device__ void keccak_absorb_once_g(uint64_t *s,
-                               unsigned int r,
-                               __global const uint8_t *in,
-                               size_t inlen,
-                               uint8_t p)
-{
-  unsigned int i;
-
-  for(i=0;i<25;i++)
-    s[i] = 0;
-
-  while(inlen >= r) {
-    for(i=0;i<r/8;i++)
-      s[i] ^= load64_g(in+8*i);
-    in += r;
-    inlen -= r;
-    KeccakF1600_StatePermute(s);
-  }
-
-  for(i=0;i<inlen;i++)
-    s[i/8] ^= (uint64_t)in[i] << 8*(i%8);
-
-  s[i/8] ^= (uint64_t)p << 8*(i%8);
-  s[(r-1)/8] ^= 1ULL << 63;
-}
-
 /*************************************************
 * Name:        keccak_squeezeblocks
 *
@@ -950,9 +990,9 @@ __device__ void keccak_absorb_once_g(uint64_t *s,
 *              - uint64_t *s: pointer to input/output Keccak state
 *              - unsigned int r: rate in bytes (e.g., 168 for SHAKE128)
 **************************************************/
-__device__ void keccak_squeezeblocks(uint8_t *out,
+static void keccak_squeezeblocks(uint8_t *out,
                                  size_t nblocks,
-                                 uint64_t *s,
+                                 __generic uint64_t s[25],
                                  unsigned int r)
 {
   unsigned int i;
@@ -967,6 +1007,19 @@ __device__ void keccak_squeezeblocks(uint8_t *out,
 }
 
 /*************************************************
+* Name:        shake128_init
+*
+* Description: Initilizes Keccak state for use as SHAKE128 XOF
+*
+* Arguments:   - keccak_state *state: pointer to (uninitialized) Keccak state
+**************************************************/
+void shake128_init(keccak_state *state)
+{
+  keccak_init(state->s);
+  state->pos = 0;
+}
+
+/*************************************************
 * Name:        shake128_absorb
 *
 * Description: Absorb step of the SHAKE128 XOF; incremental.
@@ -975,7 +1028,7 @@ __device__ void keccak_squeezeblocks(uint8_t *out,
 *              - const uint8_t *in: pointer to input to be absorbed into s
 *              - size_t inlen: length of input in bytes
 **************************************************/
-__device__ void shake128_absorb(keccak_state state[0], const uint8_t in[0], size_t inlen)
+void shake128_absorb(keccak_state *state, const uint8_t *in, size_t inlen)
 {
   state->pos = keccak_absorb(state->s, state->pos, SHAKE128_RATE, in, inlen);
 }
@@ -987,7 +1040,7 @@ __device__ void shake128_absorb(keccak_state state[0], const uint8_t in[0], size
 *
 * Arguments:   - keccak_state *state: pointer to Keccak state
 **************************************************/
-void shake128_finalize(keccak_state state[0])
+void shake128_finalize(keccak_state *state)
 {
   keccak_finalize(state->s, state->pos, SHAKE128_RATE, 0x1F);
   state->pos = SHAKE128_RATE;
@@ -1003,7 +1056,7 @@ void shake128_finalize(keccak_state state[0])
 *              - size_t outlen : number of bytes to be squeezed (written to output)
 *              - keccak_state *s: pointer to input/output Keccak state
 **************************************************/
-__device__ void shake128_squeeze(uint8_t out[0], size_t outlen, keccak_state state[0])
+void shake128_squeeze(uint8_t *out, size_t outlen, keccak_state *state)
 {
   state->pos = keccak_squeeze(out, outlen, state->s, state->pos, SHAKE128_RATE);
 }
@@ -1017,7 +1070,7 @@ __device__ void shake128_squeeze(uint8_t out[0], size_t outlen, keccak_state sta
 *              - const uint8_t *in: pointer to input to be absorbed into s
 *              - size_t inlen: length of input in bytes
 **************************************************/
-__device__ void shake128_absorb_once(keccak_state state[0], const uint8_t in[0], size_t inlen)
+void shake128_absorb_once(keccak_state *state, const uint8_t *in, size_t inlen)
 {
   keccak_absorb_once(state->s, SHAKE128_RATE, in, inlen, 0x1F);
   state->pos = SHAKE128_RATE;
@@ -1035,7 +1088,7 @@ __device__ void shake128_absorb_once(keccak_state state[0], const uint8_t in[0],
 *              - size_t nblocks: number of blocks to be squeezed (written to output)
 *              - keccak_state *s: pointer to input/output Keccak state
 **************************************************/
-__device__ void shake128_squeezeblocks(uint8_t out[0], size_t nblocks, keccak_state state[0])
+void shake128_squeezeblocks(uint8_t *out, size_t nblocks, keccak_state *state)
 {
   keccak_squeezeblocks(out, nblocks, state->s, SHAKE128_RATE);
 }
@@ -1047,7 +1100,7 @@ __device__ void shake128_squeezeblocks(uint8_t out[0], size_t nblocks, keccak_st
 *
 * Arguments:   - keccak_state *state: pointer to (uninitialized) Keccak state
 **************************************************/
-void shake256_init(keccak_state state[0])
+void shake256_init(keccak_state *state)
 {
   keccak_init(state->s);
   state->pos = 0;
@@ -1062,7 +1115,7 @@ void shake256_init(keccak_state state[0])
 *              - const uint8_t *in: pointer to input to be absorbed into s
 *              - size_t inlen: length of input in bytes
 **************************************************/
-__device__ void shake256_absorb(keccak_state state[0], const uint8_t *in, size_t inlen)
+void shake256_absorb(keccak_state *state, const uint8_t *in, size_t inlen)
 {
   state->pos = keccak_absorb(state->s, state->pos, SHAKE256_RATE, in, inlen);
 }
@@ -1074,7 +1127,7 @@ __device__ void shake256_absorb(keccak_state state[0], const uint8_t *in, size_t
 *
 * Arguments:   - keccak_state *state: pointer to Keccak state
 **************************************************/
-void shake256_finalize(keccak_state state[0])
+void shake256_finalize(keccak_state *state)
 {
   keccak_finalize(state->s, state->pos, SHAKE256_RATE, 0x1F);
   state->pos = SHAKE256_RATE;
@@ -1090,7 +1143,7 @@ void shake256_finalize(keccak_state state[0])
 *              - size_t outlen : number of bytes to be squeezed (written to output)
 *              - keccak_state *s: pointer to input/output Keccak state
 **************************************************/
-__device__ void shake256_squeeze(uint8_t *out, size_t outlen, keccak_state *state)
+void shake256_squeeze(uint8_t *out, size_t outlen, keccak_state *state)
 {
   state->pos = keccak_squeeze(out, outlen, state->s, state->pos, SHAKE256_RATE);
 }
@@ -1104,7 +1157,7 @@ __device__ void shake256_squeeze(uint8_t *out, size_t outlen, keccak_state *stat
 *              - const uint8_t *in: pointer to input to be absorbed into s
 *              - size_t inlen: length of input in bytes
 **************************************************/
-__device__ void shake256_absorb_once(keccak_state *state, const uint8_t *in, size_t inlen)
+void shake256_absorb_once(keccak_state *state, const uint8_t *in, size_t inlen)
 {
   keccak_absorb_once(state->s, SHAKE256_RATE, in, inlen, 0x1F);
   state->pos = SHAKE256_RATE;
@@ -1122,9 +1175,32 @@ __device__ void shake256_absorb_once(keccak_state *state, const uint8_t *in, siz
 *              - size_t nblocks: number of blocks to be squeezed (written to output)
 *              - keccak_state *s: pointer to input/output Keccak state
 **************************************************/
-__device__ void shake256_squeezeblocks(uint8_t *out, size_t nblocks, keccak_state *state)
+void shake256_squeezeblocks(uint8_t *out, size_t nblocks, keccak_state *state)
 {
   keccak_squeezeblocks(out, nblocks, state->s, SHAKE256_RATE);
+}
+
+/*************************************************
+* Name:        shake128
+*
+* Description: SHAKE128 XOF with non-incremental API
+*
+* Arguments:   - uint8_t *out: pointer to output
+*              - size_t outlen: requested output length in bytes
+*              - const uint8_t *in: pointer to input
+*              - size_t inlen: length of input in bytes
+**************************************************/
+void shake128(uint8_t *out, size_t outlen, const uint8_t *in, size_t inlen)
+{
+  size_t nblocks;
+  keccak_state state;
+
+  shake128_absorb_once(&state, in, inlen);
+  nblocks = outlen/SHAKE128_RATE;
+  shake128_squeezeblocks(out, nblocks, &state);
+  outlen -= nblocks*SHAKE128_RATE;
+  out += nblocks*SHAKE128_RATE;
+  shake128_squeeze(out, outlen, &state);
 }
 
 /*************************************************
@@ -1137,7 +1213,7 @@ __device__ void shake256_squeezeblocks(uint8_t *out, size_t nblocks, keccak_stat
 *              - const uint8_t *in: pointer to input
 *              - size_t inlen: length of input in bytes
 **************************************************/
-__device__ void shake256(uint8_t *out, size_t outlen, const uint8_t *in, size_t inlen)
+void shake256(uint8_t *out, size_t outlen, const uint8_t *in, size_t inlen)
 {
   size_t nblocks;
   keccak_state state;
@@ -1159,34 +1235,12 @@ __device__ void shake256(uint8_t *out, size_t outlen, const uint8_t *in, size_t 
 *              - const uint8_t *in: pointer to input
 *              - size_t inlen: length of input in bytes
 **************************************************/
-__device__ void sha3_256(__global uint8_t *h, __global const uint8_t *in, size_t inlen)
-{
-  unsigned int i;
-  uint64_t s[25];
-
-  keccak_absorb_once_g(s, SHA3_256_RATE, in, inlen, 0x06);
-  KeccakF1600_StatePermute(s);
-  for(i=0;i<4;i++)
-    store64_g(h+8*i,s[i]);
-}
-
-__device__ void sha3_256_i_i(uint8_t *h, const uint8_t *in, size_t inlen)
+void sha3_256(__generic uint8_t h[32], const uint8_t *in, size_t inlen)
 {
   unsigned int i;
   uint64_t s[25];
 
   keccak_absorb_once(s, SHA3_256_RATE, in, inlen, 0x06);
-  KeccakF1600_StatePermute(s);
-  for(i=0;i<4;i++)
-    store64(h+8*i,s[i]);
-}
-
-__device__ void sha3_256_i_g(uint8_t *h, __global const uint8_t *in, size_t inlen)
-{
-  unsigned int i;
-  uint64_t s[25];
-
-  keccak_absorb_once_g(s, SHA3_256_RATE, in, inlen, 0x06);
   KeccakF1600_StatePermute(s);
   for(i=0;i<4;i++)
     store64(h+8*i,s[i]);
@@ -1201,7 +1255,7 @@ __device__ void sha3_256_i_g(uint8_t *h, __global const uint8_t *in, size_t inle
 *              - const uint8_t *in: pointer to input
 *              - size_t inlen: length of input in bytes
 **************************************************/
-__device__ void sha3_512(uint8_t h[64], const uint8_t in[0], size_t inlen)
+void sha3_512(uint8_t h[64], const uint8_t *in, size_t inlen)
 {
   unsigned int i;
   uint64_t s[25];
@@ -1215,19 +1269,22 @@ __device__ void sha3_512(uint8_t h[64], const uint8_t in[0], size_t inlen)
 typedef keccak_state xof_state;
 
 #define kyber_shake128_absorb KYBER_NAMESPACE(kyber_shake128_absorb)
+void kyber_shake128_absorb(keccak_state *s,
+                           const __generic uint8_t seed[KYBER_SYMBYTES],
+                           uint8_t x,
+                           uint8_t y);
+
 #define kyber_shake256_prf KYBER_NAMESPACE(kyber_shake256_prf)
+void kyber_shake256_prf(uint8_t *out, size_t outlen, const __generic uint8_t key[KYBER_SYMBYTES], uint8_t nonce);
 
 #define XOF_BLOCKBYTES SHAKE128_RATE
 
 #define hash_h(OUT, IN, INBYTES) sha3_256(OUT, IN, INBYTES)
-#define hash_h_i_i(OUT, IN, INBYTES) sha3_256_i_i(OUT, IN, INBYTES)
-#define hash_h_i_g(OUT, IN, INBYTES) sha3_256_i_g(OUT, IN, INBYTES)
 #define hash_g(OUT, IN, INBYTES) sha3_512(OUT, IN, INBYTES)
 #define xof_absorb(STATE, SEED, X, Y) kyber_shake128_absorb(STATE, SEED, X, Y)
 #define xof_squeezeblocks(OUT, OUTBLOCKS, STATE) shake128_squeezeblocks(OUT, OUTBLOCKS, STATE)
 #define prf(OUT, OUTBYTES, KEY, NONCE) kyber_shake256_prf(OUT, OUTBYTES, KEY, NONCE)
 #define kdf(OUT, IN, INBYTES) shake256(OUT, KYBER_SSBYTES, IN, INBYTES)
-
 
 /*************************************************
 * Name:        kyber_shake128_absorb
@@ -1239,16 +1296,16 @@ typedef keccak_state xof_state;
 *              - uint8_t i: additional byte of input
 *              - uint8_t j: additional byte of input
 **************************************************/
-__device__ void kyber_shake128_absorb(keccak_state state[0],
-                           const uint8_t seed[KYBER_SYMBYTES],
+void kyber_shake128_absorb(keccak_state *state,
+                           const __generic uint8_t seed[KYBER_SYMBYTES],
                            uint8_t x,
                            uint8_t y)
 {
   uint8_t extseed[KYBER_SYMBYTES+2];
 
-  //memcpy(extseed, seed, KYBER_SYMBYTES);
   for(int i=0; i<KYBER_SYMBYTES; i++)
-    extseed[i] = seed[i];
+  	extseed[i] = seed[i];
+  // memcpy(extseed, seed, KYBER_SYMBYTES);
   extseed[KYBER_SYMBYTES+0] = x;
   extseed[KYBER_SYMBYTES+1] = y;
 
@@ -1266,40 +1323,17 @@ __device__ void kyber_shake128_absorb(keccak_state state[0],
 *              - const uint8_t *key: pointer to the key (of length KYBER_SYMBYTES)
 *              - uint8_t nonce: single-byte nonce (public PRF input)
 **************************************************/
-__device__ void kyber_shake256_prf(uint8_t *out, size_t outlen, const uint8_t *key, uint8_t nonce)
+void kyber_shake256_prf(uint8_t *out, size_t outlen, const __generic uint8_t key[KYBER_SYMBYTES], uint8_t nonce)
 {
   uint8_t extkey[KYBER_SYMBYTES+1];
-
-  //memcpy(extkey, key, KYBER_SYMBYTES);
   for(int i=0; i<KYBER_SYMBYTES; i++)
-    extkey[i] = key[i];
+  	extkey[i] = key[i];
+  // memcpy(extkey, key, KYBER_SYMBYTES);
   extkey[KYBER_SYMBYTES] = nonce;
 
   shake256(out, outlen, extkey, sizeof(extkey));
 }
 
-
-#define poly_compress KYBER_NAMESPACE(poly_compress)
-#define poly_decompress KYBER_NAMESPACE(poly_decompress)
-
-#define poly_tobytes KYBER_NAMESPACE(poly_tobytes)
-#define poly_frombytes KYBER_NAMESPACE(poly_frombytes)
-
-#define poly_frommsg KYBER_NAMESPACE(poly_frommsg)
-#define poly_tomsg KYBER_NAMESPACE(poly_tomsg)
-
-#define poly_getnoise_eta1 KYBER_NAMESPACE(poly_getnoise_eta1)
-#define poly_getnoise_eta2 KYBER_NAMESPACE(poly_getnoise_eta2)
-
-#define poly_ntt KYBER_NAMESPACE(poly_ntt)
-#define poly_invntt_tomont KYBER_NAMESPACE(poly_invntt_tomont)
-#define poly_basemul_montgomery KYBER_NAMESPACE(poly_basemul_montgomery)
-#define poly_tomont KYBER_NAMESPACE(poly_tomont)
-
-#define poly_reduce KYBER_NAMESPACE(poly_reduce)
-
-#define poly_add KYBER_NAMESPACE(poly_add)
-#define poly_sub KYBER_NAMESPACE(poly_sub)
 
 /*************************************************
 * Name:        poly_compress
@@ -1310,48 +1344,7 @@ __device__ void kyber_shake256_prf(uint8_t *out, size_t outlen, const uint8_t *k
 *                            (of length KYBER_POLYCOMPRESSEDBYTES)
 *              - const poly *a: pointer to input polynomial
 **************************************************/
-__device__ void poly_compress(__global uint8_t *r, const poly *a)
-{
-  unsigned int i,j;
-  int16_t u;
-  uint8_t t[8];
-
-#if (KYBER_POLYCOMPRESSEDBYTES == 128)
-  for(i=0;i<KYBER_N/8;i++) {
-    for(j=0;j<8;j++) {
-      // map to positive standard representatives
-      u  = a->coeffs[8*i+j];
-      u += (u >> 15) & KYBER_Q;
-      t[j] = ((((uint16_t)u << 4) + KYBER_Q/2)/KYBER_Q) & 15;
-    }
-
-    r[0] = t[0] | (t[1] << 4);
-    r[1] = t[2] | (t[3] << 4);
-    r[2] = t[4] | (t[5] << 4);
-    r[3] = t[6] | (t[7] << 4);
-    r += 4;
-  }
-#elif (KYBER_POLYCOMPRESSEDBYTES == 160)
-  for(i=0;i<KYBER_N/8;i++) {
-    for(j=0;j<8;j++) {
-      // map to positive standard representatives
-      u  = a->coeffs[8*i+j];
-      u += (u >> 15) & KYBER_Q;
-      t[j] = ((((uint32_t)u << 5) + KYBER_Q/2)/KYBER_Q) & 31;
-    }
-
-    r[0] = (t[0] >> 0) | (t[1] << 5);
-    r[1] = (t[1] >> 3) | (t[2] << 2) | (t[3] << 7);
-    r[2] = (t[3] >> 1) | (t[4] << 4);
-    r[3] = (t[4] >> 4) | (t[5] << 1) | (t[6] << 6);
-    r[4] = (t[6] >> 2) | (t[7] << 3);
-    r += 5;
-  }
-#else
-#error "KYBER_POLYCOMPRESSEDBYTES needs to be in {128, 160}"
-#endif
-}
-__device__ void poly_compress_i(uint8_t *r, const poly *a)
+void poly_compress(uint8_t r[KYBER_POLYCOMPRESSEDBYTES], const poly *a)
 {
   unsigned int i,j;
   int16_t u;
@@ -1403,7 +1396,7 @@ __device__ void poly_compress_i(uint8_t *r, const poly *a)
 *              - const uint8_t *a: pointer to input byte array
 *                                  (of length KYBER_POLYCOMPRESSEDBYTES bytes)
 **************************************************/
-__device__ void poly_decompress(poly *r, __global const uint8_t *a)
+void poly_decompress(poly *r, const uint8_t a[KYBER_POLYCOMPRESSEDBYTES])
 {
   unsigned int i;
 
@@ -1444,7 +1437,7 @@ __device__ void poly_decompress(poly *r, __global const uint8_t *a)
 *                            (needs space for KYBER_POLYBYTES bytes)
 *              - const poly *a: pointer to input polynomial
 **************************************************/
-__device__ void poly_tobytes(__global uint8_t *r, const poly *a)
+void poly_tobytes(__generic uint8_t r[KYBER_POLYBYTES], const poly *a)
 {
   unsigned int i;
   uint16_t t0, t1;
@@ -1471,7 +1464,7 @@ __device__ void poly_tobytes(__global uint8_t *r, const poly *a)
 *              - const uint8_t *a: pointer to input byte array
 *                                  (of KYBER_POLYBYTES bytes)
 **************************************************/
-__device__ void poly_frombytes(poly *r, __global const uint8_t *a)
+void poly_frombytes(poly *r, const __generic uint8_t a[KYBER_POLYBYTES])
 {
   unsigned int i;
   for(i=0;i<KYBER_N/2;i++) {
@@ -1488,7 +1481,7 @@ __device__ void poly_frombytes(poly *r, __global const uint8_t *a)
 * Arguments:   - poly *r: pointer to output polynomial
 *              - const uint8_t *msg: pointer to input message
 **************************************************/
-__device__ void poly_frommsg(poly *r, const uint8_t *msg)
+void poly_frommsg(poly *r, const uint8_t msg[KYBER_INDCPA_MSGBYTES])
 {
   unsigned int i,j;
   int16_t mask;
@@ -1513,7 +1506,7 @@ __device__ void poly_frommsg(poly *r, const uint8_t *msg)
 * Arguments:   - uint8_t *msg: pointer to output message
 *              - const poly *a: pointer to input polynomial
 **************************************************/
-__device__ void poly_tomsg(uint8_t *msg, const poly *a)
+void poly_tomsg(uint8_t msg[KYBER_INDCPA_MSGBYTES], const poly *a)
 {
   unsigned int i,j;
   uint16_t t;
@@ -1541,7 +1534,7 @@ __device__ void poly_tomsg(uint8_t *msg, const poly *a)
 *                                     (of length KYBER_SYMBYTES bytes)
 *              - uint8_t nonce: one-byte input nonce
 **************************************************/
-__device__ void poly_getnoise_eta1(poly *r, const uint8_t *seed, uint8_t nonce)
+void poly_getnoise_eta1(poly *r, const __generic uint8_t seed[KYBER_SYMBYTES], uint8_t nonce)
 {
   uint8_t buf[KYBER_ETA1*KYBER_N/4];
   prf(buf, sizeof(buf), seed, nonce);
@@ -1560,13 +1553,28 @@ __device__ void poly_getnoise_eta1(poly *r, const uint8_t *seed, uint8_t nonce)
 *                                     (of length KYBER_SYMBYTES bytes)
 *              - uint8_t nonce: one-byte input nonce
 **************************************************/
-__device__ void poly_getnoise_eta2(poly *r, const uint8_t *seed, uint8_t nonce)
+void poly_getnoise_eta2(poly *r, const uint8_t seed[KYBER_SYMBYTES], uint8_t nonce)
 {
   uint8_t buf[KYBER_ETA2*KYBER_N/4];
   prf(buf, sizeof(buf), seed, nonce);
   poly_cbd_eta2(r, buf);
 }
 
+
+/*************************************************
+* Name:        poly_ntt
+*
+* Description: Computes negacyclic number-theoretic transform (NTT) of
+*              a polynomial in place;
+*              inputs assumed to be in normal order, output in bitreversed order
+*
+* Arguments:   - uint16_t *r: pointer to in/output polynomial
+**************************************************/
+void poly_ntt(poly *r)
+{
+  ntt(r->coeffs);
+  poly_reduce(r);
+}
 
 /*************************************************
 * Name:        poly_invntt_tomont
@@ -1577,7 +1585,7 @@ __device__ void poly_getnoise_eta2(poly *r, const uint8_t *seed, uint8_t nonce)
 *
 * Arguments:   - uint16_t *a: pointer to in/output polynomial
 **************************************************/
-__device__ void poly_invntt_tomont(poly r[0])
+void poly_invntt_tomont(poly *r)
 {
   invntt(r->coeffs);
 }
@@ -1591,7 +1599,7 @@ __device__ void poly_invntt_tomont(poly r[0])
 *              - const poly *a: pointer to first input polynomial
 *              - const poly *b: pointer to second input polynomial
 **************************************************/
-__device__ void poly_basemul_montgomery(poly *r, const poly *a, const poly *b)
+void poly_basemul_montgomery(poly *r, const poly *a, const poly *b)
 {
   unsigned int i;
   for(i=0;i<KYBER_N/4;i++) {
@@ -1608,7 +1616,7 @@ __device__ void poly_basemul_montgomery(poly *r, const poly *a, const poly *b)
 *
 * Arguments:   - poly *r: pointer to input/output polynomial
 **************************************************/
-__device__ void poly_tomont(poly *r)
+void poly_tomont(poly *r)
 {
   unsigned int i;
   const int16_t f = (1ULL << 32) % KYBER_Q;
@@ -1624,29 +1632,12 @@ __device__ void poly_tomont(poly *r)
 *
 * Arguments:   - poly *r: pointer to input/output polynomial
 **************************************************/
-__device__ void poly_reduce(poly *r)
+void poly_reduce(poly *r)
 {
   unsigned int i;
   for(i=0;i<KYBER_N;i++)
     r->coeffs[i] = barrett_reduce(r->coeffs[i]);
 }
-
-
-/*************************************************
-* Name:        poly_ntt
-*
-* Description: Computes negacyclic number-theoretic transform (NTT) of
-*              a polynomial in place;
-*              inputs assumed to be in normal order, output in bitreversed order
-*
-* Arguments:   - uint16_t *r: pointer to in/output polynomial
-**************************************************/
-__device__ void poly_ntt(poly *r)
-{
-  ntt(r->coeffs);
-  poly_reduce(r);
-}
-
 
 /*************************************************
 * Name:        poly_add
@@ -1657,7 +1648,7 @@ __device__ void poly_ntt(poly *r)
 *            - const poly *a: pointer to first input polynomial
 *            - const poly *b: pointer to second input polynomial
 **************************************************/
-__device__ void poly_add(poly *r, const poly *a, const poly *b)
+void poly_add(poly *r, const poly *a, const poly *b)
 {
   unsigned int i;
   for(i=0;i<KYBER_N;i++)
@@ -1673,7 +1664,7 @@ __device__ void poly_add(poly *r, const poly *a, const poly *b)
 *            - const poly *a: pointer to first input polynomial
 *            - const poly *b: pointer to second input polynomial
 **************************************************/
-__device__ void poly_sub(poly *r, const poly *a, const poly *b)
+void poly_sub(poly *r, const poly *a, const poly *b)
 {
   unsigned int i;
   for(i=0;i<KYBER_N;i++)
@@ -1681,20 +1672,33 @@ __device__ void poly_sub(poly *r, const poly *a, const poly *b)
 }
 
 
+typedef struct{
+  poly vec[KYBER_K];
+} polyvec;
+
 #define polyvec_compress KYBER_NAMESPACE(polyvec_compress)
+void polyvec_compress(uint8_t r[KYBER_POLYVECCOMPRESSEDBYTES], const polyvec *a);
 #define polyvec_decompress KYBER_NAMESPACE(polyvec_decompress)
+void polyvec_decompress(polyvec *r, const uint8_t a[KYBER_POLYVECCOMPRESSEDBYTES]);
 
 #define polyvec_tobytes KYBER_NAMESPACE(polyvec_tobytes)
+void polyvec_tobytes(__generic uint8_t r[KYBER_POLYVECBYTES], const polyvec *a);
 #define polyvec_frombytes KYBER_NAMESPACE(polyvec_frombytes)
+void polyvec_frombytes(polyvec *r, const __generic uint8_t a[KYBER_POLYVECBYTES]);
 
 #define polyvec_ntt KYBER_NAMESPACE(polyvec_ntt)
+void polyvec_ntt(polyvec *r);
 #define polyvec_invntt_tomont KYBER_NAMESPACE(polyvec_invntt_tomont)
+void polyvec_invntt_tomont(polyvec *r);
 
 #define polyvec_basemul_acc_montgomery KYBER_NAMESPACE(polyvec_basemul_acc_montgomery)
+void polyvec_basemul_acc_montgomery(poly *r, const polyvec *a, const polyvec *b);
 
 #define polyvec_reduce KYBER_NAMESPACE(polyvec_reduce)
+void polyvec_reduce(polyvec *r);
 
 #define polyvec_add KYBER_NAMESPACE(polyvec_add)
+void polyvec_add(polyvec *r, const polyvec *a, const polyvec *b);
 
 /*************************************************
 * Name:        polyvec_compress
@@ -1705,58 +1709,7 @@ __device__ void poly_sub(poly *r, const poly *a, const poly *b)
 *                            (needs space for KYBER_POLYVECCOMPRESSEDBYTES)
 *              - const polyvec *a: pointer to input vector of polynomials
 **************************************************/
-__device__ void polyvec_compress(__global uint8_t *r, const polyvec *a)
-{
-  unsigned int i,j,k;
-
-#if (KYBER_POLYVECCOMPRESSEDBYTES == (KYBER_K * 352))
-  uint16_t t[8];
-  for(i=0;i<KYBER_K;i++) {
-    for(j=0;j<KYBER_N/8;j++) {
-      for(k=0;k<8;k++) {
-        t[k]  = a->vec[i].coeffs[8*j+k];
-        t[k] += ((int16_t)t[k] >> 15) & KYBER_Q;
-        t[k]  = ((((uint32_t)t[k] << 11) + KYBER_Q/2)/KYBER_Q) & 0x7ff;
-      }
-
-      r[ 0] = (t[0] >>  0);
-      r[ 1] = (t[0] >>  8) | (t[1] << 3);
-      r[ 2] = (t[1] >>  5) | (t[2] << 6);
-      r[ 3] = (t[2] >>  2);
-      r[ 4] = (t[2] >> 10) | (t[3] << 1);
-      r[ 5] = (t[3] >>  7) | (t[4] << 4);
-      r[ 6] = (t[4] >>  4) | (t[5] << 7);
-      r[ 7] = (t[5] >>  1);
-      r[ 8] = (t[5] >>  9) | (t[6] << 2);
-      r[ 9] = (t[6] >>  6) | (t[7] << 5);
-      r[10] = (t[7] >>  3);
-      r += 11;
-    }
-  }
-#elif (KYBER_POLYVECCOMPRESSEDBYTES == (KYBER_K * 320))
-  uint16_t t[4];
-  for(i=0;i<KYBER_K;i++) {
-    for(j=0;j<KYBER_N/4;j++) {
-      for(k=0;k<4;k++) {
-        t[k]  = a->vec[i].coeffs[4*j+k];
-        t[k] += ((int16_t)t[k] >> 15) & KYBER_Q;
-        t[k]  = ((((uint32_t)t[k] << 10) + KYBER_Q/2)/ KYBER_Q) & 0x3ff;
-      }
-
-      r[0] = (t[0] >> 0);
-      r[1] = (t[0] >> 8) | (t[1] << 2);
-      r[2] = (t[1] >> 6) | (t[2] << 4);
-      r[3] = (t[2] >> 4) | (t[3] << 6);
-      r[4] = (t[3] >> 2);
-      r += 5;
-    }
-  }
-#else
-#error "KYBER_POLYVECCOMPRESSEDBYTES needs to be in {320*KYBER_K, 352*KYBER_K}"
-#endif
-}
-
-__device__ void polyvec_compress_i(uint8_t *r, const polyvec *a)
+void polyvec_compress(uint8_t r[KYBER_POLYVECCOMPRESSEDBYTES], const polyvec *a)
 {
   unsigned int i,j,k;
 
@@ -1817,7 +1770,7 @@ __device__ void polyvec_compress_i(uint8_t *r, const polyvec *a)
 *              - const uint8_t *a: pointer to input byte array
 *                                  (of length KYBER_POLYVECCOMPRESSEDBYTES)
 **************************************************/
-__device__ void polyvec_decompress(polyvec *r, __global const uint8_t *a)
+void polyvec_decompress(polyvec *r, const uint8_t a[KYBER_POLYVECCOMPRESSEDBYTES])
 {
   unsigned int i,j,k;
 
@@ -1867,7 +1820,7 @@ __device__ void polyvec_decompress(polyvec *r, __global const uint8_t *a)
 *                            (needs space for KYBER_POLYVECBYTES)
 *              - const polyvec *a: pointer to input vector of polynomials
 **************************************************/
-__device__ void polyvec_tobytes(__global uint8_t *r, const polyvec *a)
+void polyvec_tobytes(__generic uint8_t r[KYBER_POLYVECBYTES], const polyvec *a)
 {
   unsigned int i;
   for(i=0;i<KYBER_K;i++)
@@ -1884,7 +1837,7 @@ __device__ void polyvec_tobytes(__global uint8_t *r, const polyvec *a)
 *              - const polyvec *a: pointer to input vector of polynomials
 *                                  (of length KYBER_POLYVECBYTES)
 **************************************************/
-__device__ void polyvec_frombytes(polyvec *r, __global const uint8_t *a)
+void polyvec_frombytes(polyvec *r, const __generic uint8_t a[KYBER_POLYVECBYTES])
 {
   unsigned int i;
   for(i=0;i<KYBER_K;i++)
@@ -1898,7 +1851,7 @@ __device__ void polyvec_frombytes(polyvec *r, __global const uint8_t *a)
 *
 * Arguments:   - polyvec *r: pointer to in/output vector of polynomials
 **************************************************/
-__device__ void polyvec_ntt(polyvec *r)
+void polyvec_ntt(polyvec *r)
 {
   unsigned int i;
   for(i=0;i<KYBER_K;i++)
@@ -1913,7 +1866,7 @@ __device__ void polyvec_ntt(polyvec *r)
 *
 * Arguments:   - polyvec *r: pointer to in/output vector of polynomials
 **************************************************/
-__device__ void polyvec_invntt_tomont(polyvec r[0])
+void polyvec_invntt_tomont(polyvec *r)
 {
   unsigned int i;
   for(i=0;i<KYBER_K;i++)
@@ -1930,7 +1883,7 @@ __device__ void polyvec_invntt_tomont(polyvec r[0])
 *            - const polyvec *a: pointer to first input vector of polynomials
 *            - const polyvec *b: pointer to second input vector of polynomials
 **************************************************/
-__device__ void polyvec_basemul_acc_montgomery(poly *r, const polyvec *a, const polyvec *b)
+void polyvec_basemul_acc_montgomery(poly *r, const polyvec *a, const polyvec *b)
 {
   unsigned int i;
   poly t;
@@ -1953,7 +1906,7 @@ __device__ void polyvec_basemul_acc_montgomery(poly *r, const polyvec *a, const 
 *
 * Arguments:   - polyvec *r: pointer to input/output polynomial
 **************************************************/
-__device__ void polyvec_reduce(polyvec *r)
+void polyvec_reduce(polyvec *r)
 {
   unsigned int i;
   for(i=0;i<KYBER_K;i++)
@@ -1969,14 +1922,30 @@ __device__ void polyvec_reduce(polyvec *r)
 *            - const polyvec *a: pointer to first input vector of polynomials
 *            - const polyvec *b: pointer to second input vector of polynomials
 **************************************************/
-__device__ void polyvec_add(polyvec *r, const polyvec *a, const polyvec *b)
+void polyvec_add(polyvec *r, const polyvec *a, const polyvec *b)
 {
   unsigned int i;
   for(i=0;i<KYBER_K;i++)
     poly_add(&r->vec[i], &a->vec[i], &b->vec[i]);
 }
 
-// #include "randombytes.h"
+
+#define gen_matrix KYBER_NAMESPACE(gen_matrix)
+void gen_matrix(polyvec *a, const __generic uint8_t seed[KYBER_SYMBYTES], int transposed);
+#define indcpa_keypair KYBER_NAMESPACE(indcpa_keypair)
+void indcpa_keypair(__generic uint8_t pk[KYBER_INDCPA_PUBLICKEYBYTES],
+                    __generic uint8_t sk[KYBER_INDCPA_SECRETKEYBYTES]);
+
+#define indcpa_enc KYBER_NAMESPACE(indcpa_enc)
+void indcpa_enc(uint8_t c[KYBER_INDCPA_BYTES],
+                const uint8_t m[KYBER_INDCPA_MSGBYTES],
+                const __generic uint8_t pk[KYBER_INDCPA_PUBLICKEYBYTES],
+                const uint8_t coins[KYBER_SYMBYTES]);
+
+#define indcpa_dec KYBER_NAMESPACE(indcpa_dec)
+void indcpa_dec(uint8_t m[KYBER_INDCPA_MSGBYTES],
+                const uint8_t c[KYBER_INDCPA_BYTES],
+                const uint8_t sk[KYBER_INDCPA_SECRETKEYBYTES]);
 
 /*************************************************
 * Name:        pack_pk
@@ -1989,9 +1958,9 @@ __device__ void polyvec_add(polyvec *r, const polyvec *a, const polyvec *b)
 *              polyvec *pk: pointer to the input public-key polyvec
 *              const uint8_t *seed: pointer to the input public seed
 **************************************************/
-__device__ void pack_pk(__global uint8_t *r,
+static void pack_pk(__generic uint8_t r[KYBER_INDCPA_PUBLICKEYBYTES],
                     polyvec *pk,
-                    const uint8_t *seed)
+                    const __generic uint8_t seed[KYBER_SYMBYTES])
 {
   size_t i;
   polyvec_tobytes(r, pk);
@@ -2009,9 +1978,9 @@ __device__ void pack_pk(__global uint8_t *r,
 *              - uint8_t *seed: pointer to output seed to generate matrix A
 *              - const uint8_t *packedpk: pointer to input serialized public key
 **************************************************/
-__device__ void unpack_pk(polyvec *pk,
-                      uint8_t *seed,
-                      __global const uint8_t *packedpk)
+static void unpack_pk(polyvec *pk,
+                      uint8_t seed[KYBER_SYMBYTES],
+                      const __generic uint8_t packedpk[KYBER_INDCPA_PUBLICKEYBYTES])
 {
   size_t i;
   polyvec_frombytes(pk, packedpk);
@@ -2027,7 +1996,7 @@ __device__ void unpack_pk(polyvec *pk,
 * Arguments:   - uint8_t *r: pointer to output serialized secret key
 *              - polyvec *sk: pointer to input vector of polynomials (secret key)
 **************************************************/
-__device__ void pack_sk(__global uint8_t *r, polyvec *sk)
+static void pack_sk(__generic uint8_t r[KYBER_INDCPA_SECRETKEYBYTES], polyvec *sk)
 {
   polyvec_tobytes(r, sk);
 }
@@ -2040,7 +2009,7 @@ __device__ void pack_sk(__global uint8_t *r, polyvec *sk)
 * Arguments:   - polyvec *sk: pointer to output vector of polynomials (secret key)
 *              - const uint8_t *packedsk: pointer to input serialized secret key
 **************************************************/
-__device__ void unpack_sk(polyvec *sk, __global const uint8_t *packedsk)
+static void unpack_sk(polyvec *sk, const uint8_t packedsk[KYBER_INDCPA_SECRETKEYBYTES])
 {
   polyvec_frombytes(sk, packedsk);
 }
@@ -2056,16 +2025,10 @@ __device__ void unpack_sk(polyvec *sk, __global const uint8_t *packedsk)
 *              poly *pk: pointer to the input vector of polynomials b
 *              poly *v: pointer to the input polynomial v
 **************************************************/
-__device__ void pack_ciphertext(__global uint8_t *r, polyvec *b, poly *v)
+static void pack_ciphertext(uint8_t r[KYBER_INDCPA_BYTES], polyvec *b, poly *v)
 {
   polyvec_compress(r, b);
   poly_compress(r+KYBER_POLYVECCOMPRESSEDBYTES, v);
-}
-
-__device__ void pack_ciphertext_i(uint8_t *r, polyvec *b, poly *v)
-{
-  polyvec_compress_i(r, b);
-  poly_compress_i(r+KYBER_POLYVECCOMPRESSEDBYTES, v);
 }
 
 /*************************************************
@@ -2078,7 +2041,7 @@ __device__ void pack_ciphertext_i(uint8_t *r, polyvec *b, poly *v)
 *              - poly *v: pointer to the output polynomial v
 *              - const uint8_t *c: pointer to the input serialized ciphertext
 **************************************************/
-__device__ void unpack_ciphertext(polyvec *b, poly *v, __global const uint8_t *c)
+static void unpack_ciphertext(polyvec *b, poly *v, const uint8_t c[KYBER_INDCPA_BYTES])
 {
   polyvec_decompress(b, c);
   poly_decompress(v, c+KYBER_POLYVECCOMPRESSEDBYTES);
@@ -2097,7 +2060,7 @@ __device__ void unpack_ciphertext(polyvec *b, poly *v, __global const uint8_t *c
 *
 * Returns number of sampled 16-bit integers (at most len)
 **************************************************/
-__device__ unsigned int rej_uniform(int16_t *r,
+static unsigned int rej_uniform(int16_t *r,
                                 unsigned int len,
                                 const uint8_t *buf,
                                 unsigned int buflen)
@@ -2137,7 +2100,7 @@ __device__ unsigned int rej_uniform(int16_t *r,
 **************************************************/
 #define GEN_MATRIX_NBLOCKS ((12*KYBER_N/8*(1 << 12)/KYBER_Q + XOF_BLOCKBYTES)/XOF_BLOCKBYTES)
 // Not static for benchmarking
-__device__ void gen_matrix(polyvec *a, const uint8_t seed[KYBER_SYMBYTES], int transposed)
+void gen_matrix(polyvec *a, const __generic uint8_t seed[KYBER_SYMBYTES], int transposed)
 {
   unsigned int ctr, i, j, k;
   unsigned int buflen, off;
@@ -2178,23 +2141,29 @@ __device__ void gen_matrix(polyvec *a, const uint8_t seed[KYBER_SYMBYTES], int t
 *              - uint8_t *sk: pointer to output private key
                               (of length KYBER_INDCPA_SECRETKEYBYTES bytes)
 **************************************************/
-__device__ void indcpa_keypair(__global uint8_t *pk,
-                    __global uint8_t *sk)
+void indcpa_keypair(__generic uint8_t pk[KYBER_INDCPA_PUBLICKEYBYTES],
+                    __generic uint8_t sk[KYBER_INDCPA_SECRETKEYBYTES])
 {
   unsigned int i;
-  uint8_t buf[2*KYBER_SYMBYTES] = {0};
+  uint8_t buf[2*KYBER_SYMBYTES];
+  const uint8_t *publicseed = buf;
+  const uint8_t *noiseseed = buf+KYBER_SYMBYTES;
   uint8_t nonce = 0;
   polyvec a[KYBER_K], e, pkpv, skpv;
 
+#ifdef NO_RANDOM
+  for(int i=0; i<KYBER_SYMBYTES; i++)
+    buf[i] = 0;
+#endif
   // randombytes(buf, KYBER_SYMBYTES);
   hash_g(buf, buf, KYBER_SYMBYTES);
 
-  gen_a(a, buf);
+  gen_a(a, publicseed);
 
   for(i=0;i<KYBER_K;i++)
-    poly_getnoise_eta1(&skpv.vec[i], buf+KYBER_SYMBYTES, nonce++);
+    poly_getnoise_eta1(&skpv.vec[i], noiseseed, nonce++);
   for(i=0;i<KYBER_K;i++)
-    poly_getnoise_eta1(&e.vec[i], buf+KYBER_SYMBYTES, nonce++);
+    poly_getnoise_eta1(&e.vec[i], noiseseed, nonce++);
 
   polyvec_ntt(&skpv);
   polyvec_ntt(&e);
@@ -2209,7 +2178,7 @@ __device__ void indcpa_keypair(__global uint8_t *pk,
   polyvec_reduce(&pkpv);
 
   pack_sk(sk, &skpv);
-  pack_pk(pk, &pkpv, buf);
+  pack_pk(pk, &pkpv, publicseed);
 }
 
 /*************************************************
@@ -2228,10 +2197,10 @@ __device__ void indcpa_keypair(__global uint8_t *pk,
 *                                      (of length KYBER_SYMBYTES) to deterministically
 *                                      generate all randomness
 **************************************************/
-__device__ void indcpa_enc(__global uint8_t *c,
-                const uint8_t *m,
-                __global const uint8_t *pk,
-                const uint8_t *coins)
+void indcpa_enc(uint8_t c[KYBER_INDCPA_BYTES],
+                const uint8_t m[KYBER_INDCPA_MSGBYTES],
+                const __generic uint8_t pk[KYBER_INDCPA_PUBLICKEYBYTES],
+                const uint8_t coins[KYBER_SYMBYTES])
 {
   unsigned int i;
   uint8_t seed[KYBER_SYMBYTES];
@@ -2269,47 +2238,6 @@ __device__ void indcpa_enc(__global uint8_t *c,
   pack_ciphertext(c, &b, &v);
 }
 
-__device__ void indcpa_enc_i(uint8_t *c,
-                const uint8_t *m,
-                __global const uint8_t *pk,
-                const uint8_t *coins)
-{
-  unsigned int i;
-  uint8_t seed[KYBER_SYMBYTES];
-  uint8_t nonce = 0;
-  polyvec sp, pkpv, ep, at[KYBER_K], b;
-  poly v, k, epp;
-
-  unpack_pk(&pkpv, seed, pk);
-  poly_frommsg(&k, m);
-  gen_at(at, seed);
-
-  for(i=0;i<KYBER_K;i++)
-    poly_getnoise_eta1(sp.vec+i, coins, nonce++);
-  for(i=0;i<KYBER_K;i++)
-    poly_getnoise_eta2(ep.vec+i, coins, nonce++);
-  poly_getnoise_eta2(&epp, coins, nonce++);
-
-  polyvec_ntt(&sp);
-
-  // matrix-vector multiplication
-  for(i=0;i<KYBER_K;i++)
-    polyvec_basemul_acc_montgomery(&b.vec[i], &at[i], &sp);
-
-  polyvec_basemul_acc_montgomery(&v, &pkpv, &sp);
-
-  polyvec_invntt_tomont(&b);
-  poly_invntt_tomont(&v);
-
-  polyvec_add(&b, &b, &ep);
-  poly_add(&v, &v, &epp);
-  poly_add(&v, &v, &k);
-  polyvec_reduce(&b);
-  poly_reduce(&v);
-
-  pack_ciphertext_i(c, &b, &v);
-}
-
 /*************************************************
 * Name:        indcpa_dec
 *
@@ -2323,9 +2251,9 @@ __device__ void indcpa_enc_i(uint8_t *c,
 *              - const uint8_t *sk: pointer to input secret key
 *                                   (of length KYBER_INDCPA_SECRETKEYBYTES)
 **************************************************/
-__device__ void indcpa_dec(uint8_t *m,
-                __global const uint8_t *c,
-                __global const uint8_t *sk)
+void indcpa_dec(uint8_t m[KYBER_INDCPA_MSGBYTES],
+                const uint8_t c[KYBER_INDCPA_BYTES],
+                const uint8_t sk[KYBER_INDCPA_SECRETKEYBYTES])
 {
   polyvec b, skpv;
   poly v, mp;
@@ -2343,9 +2271,6 @@ __device__ void indcpa_dec(uint8_t *m,
   poly_tomsg(m, &mp);
 }
 
-
-#define crypto_kem_keypair KYBER_NAMESPACE(keypair)
-
 /*************************************************
 * Name:        crypto_kem_keypair
 *
@@ -2359,18 +2284,21 @@ __device__ void indcpa_dec(uint8_t *m,
 *
 * Returns 0 (success)
 **************************************************/
-__device__ void crypto_kem_keypair(__global uint32_t *pk32,
-                       __global uint32_t *sk32)
+int crypto_kem_keypair(__generic uint8_t pk[KYBER_PUBLICKEYBYTES],
+                      __generic uint8_t sk[KYBER_SECRETKEYBYTES])
 {
   size_t i;
-  __global uint8_t *pk = pk32;
-  __global uint8_t *sk = sk32;
   indcpa_keypair(pk, sk);
   for(i=0;i<KYBER_INDCPA_PUBLICKEYBYTES;i++)
     sk[i+KYBER_INDCPA_SECRETKEYBYTES] = pk[i];
   hash_h(sk+KYBER_SECRETKEYBYTES-2*KYBER_SYMBYTES, pk, KYBER_PUBLICKEYBYTES);
+#ifdef NO_RANDOM
+  for(int i=0; i<KYBER_SYMBYTES; i++)
+    sk[KYBER_SECRETKEYBYTES-KYBER_SYMBYTES+i] = 0;
+#endif
   /* Value z for pseudo-random output on reject */
   // randombytes(sk+KYBER_SECRETKEYBYTES-KYBER_SYMBYTES, KYBER_SYMBYTES);
+  return 0;
 }
 
 /*************************************************
@@ -2388,27 +2316,31 @@ __device__ void crypto_kem_keypair(__global uint32_t *pk32,
 *
 * Returns 0 (success)
 **************************************************/
-__device__ int crypto_kem_enc(__global uint8_t *ct,
-                   __global uint8_t *ss,
-                   __global const uint8_t *pk)
+int crypto_kem_enc(uint8_t ct[KYBER_CIPHERTEXTBYTES],
+                   uint8_t ss[KYBER_SSBYTES],
+                   const uint8_t pk[KYBER_PUBLICKEYBYTES])
 {
-  uint8_t buf[2*KYBER_SYMBYTES] = {0};
+  uint8_t buf[2*KYBER_SYMBYTES];
   /* Will contain key, coins */
   uint8_t kr[2*KYBER_SYMBYTES];
 
+#ifdef NO_RANDOM
+  for(int i=0; i<KYBER_SYMBYTES; i++)
+    buf[i] = 0;
+#endif
   // randombytes(buf, KYBER_SYMBYTES);
   /* Don't release system RNG output */
-  hash_h_i_i(buf, buf, KYBER_SYMBYTES);
+  hash_h(buf, buf, KYBER_SYMBYTES);
 
   /* Multitarget countermeasure for coins + contributory KEM */
-  hash_h_i_g(buf+KYBER_SYMBYTES, pk, KYBER_PUBLICKEYBYTES);
+  hash_h(buf+KYBER_SYMBYTES, pk, KYBER_PUBLICKEYBYTES);
   hash_g(kr, buf, 2*KYBER_SYMBYTES);
 
   /* coins are in kr+KYBER_SYMBYTES */
   indcpa_enc(ct, buf, pk, kr+KYBER_SYMBYTES);
 
   /* overwrite coins in kr with H(c) */
-  hash_h_i_g(kr+KYBER_SYMBYTES, ct, KYBER_CIPHERTEXTBYTES);
+  hash_h(kr+KYBER_SYMBYTES, ct, KYBER_CIPHERTEXTBYTES);
   /* hash concatenation of pre-k and H(c) to k */
   kdf(ss, kr, 2*KYBER_SYMBYTES);
   return 0;
@@ -2431,9 +2363,9 @@ __device__ int crypto_kem_enc(__global uint8_t *ct,
 *
 * On failure, ss will contain a pseudo-random value.
 **************************************************/
-__device__ int crypto_kem_dec(__global uint8_t *ss,
-                   __global const uint8_t *ct,
-                   __global const uint8_t *sk)
+int crypto_kem_dec(uint8_t ss[KYBER_SSBYTES],
+                   const uint8_t ct[KYBER_CIPHERTEXTBYTES],
+                   const uint8_t sk[KYBER_SECRETKEYBYTES])
 {
   size_t i;
   // int fail;
@@ -2441,6 +2373,7 @@ __device__ int crypto_kem_dec(__global uint8_t *ss,
   /* Will contain key, coins */
   uint8_t kr[2*KYBER_SYMBYTES];
   uint8_t cmp[KYBER_CIPHERTEXTBYTES];
+  const uint8_t *pk = sk+KYBER_INDCPA_SECRETKEYBYTES;
 
   indcpa_dec(buf, ct, sk);
 
@@ -2450,12 +2383,12 @@ __device__ int crypto_kem_dec(__global uint8_t *ss,
   hash_g(kr, buf, 2*KYBER_SYMBYTES);
 
   /* coins are in kr+KYBER_SYMBYTES */
-  indcpa_enc_i(cmp, buf, sk+KYBER_INDCPA_SECRETKEYBYTES, kr+KYBER_SYMBYTES);
+  indcpa_enc(cmp, buf, pk, kr+KYBER_SYMBYTES);
 
   // fail = verify(ct, cmp, KYBER_CIPHERTEXTBYTES);
 
   /* overwrite coins in kr with H(c) */
-  hash_h_i_g(kr+KYBER_SYMBYTES, ct, KYBER_CIPHERTEXTBYTES);
+  hash_h(kr+KYBER_SYMBYTES, ct, KYBER_CIPHERTEXTBYTES);
 
   /* Overwrite pre-k with z on re-encryption failure */
   // cmov(kr, sk+KYBER_SECRETKEYBYTES-KYBER_SYMBYTES, KYBER_SYMBYTES, fail);
@@ -2464,9 +2397,10 @@ __device__ int crypto_kem_dec(__global uint8_t *ss,
   kdf(ss, kr, 2*KYBER_SYMBYTES);
   return 0;
 }
-#define KEY_32_OFFSET ((KYBER_PUBLICKEYBYTES+KYBER_SECRETKEYBYTES))
-#define ENC_GROPUP (KYBER_CIPHERTEXTBYTES+KYBER_SSBYTES+KYBER_PUBLICKEYBYTES)
-#define DEC_GROPUP (KYBER_SSBYTES+KYBER_CIPHERTEXTBYTES+KYBER_SECRETKEYBYTES)
+
+#ifndef CL_TEST
+
+#define KEY_32_OFFSET (KYBER_PUBLICKEYBYTES+KYBER_SECRETKEYBYTES)
 
 __kernel void compute(__global const unsigned int* input, __global unsigned int* data)
 {
@@ -2474,25 +2408,7 @@ __kernel void compute(__global const unsigned int* input, __global unsigned int*
 
   __global unsigned int* pub = data + gid * KEY_32_OFFSET / 4;
   __global unsigned int* pri = pub + KYBER_PUBLICKEYBYTES / 4;
-  crypto_kem_keypair(pub, pri);
+  crypto_kem_keypair((uint8_t *)pub, (uint8_t *)pri);
 }
 
-__kernel void compute_enc(__global const unsigned int* input, __global unsigned int* data)
-{
-  int gid = get_global_id(0);
-
-  __global unsigned int* ct = input + gid * ENC_GROPUP / 4;
-  __global unsigned int* pk = input + gid * ENC_GROPUP / 4 + 200;
-  __global unsigned int* key_b = data + gid * 8;
-  crypto_kem_enc(ct, key_b, pk);
-}
-
-__kernel void compute_dec(__global const unsigned int* input, __global unsigned int* data)
-{
-  int gid = get_global_id(0);
-
-  __global unsigned int* key_a = data + gid * 8;
-  __global unsigned int* ct = input + gid * DEC_GROPUP / 4 + 8;
-  __global unsigned int* sk = input + gid * DEC_GROPUP / 4 + 200;
-  crypto_kem_dec(key_a, ct, sk);
-}
+#endif

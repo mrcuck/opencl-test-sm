@@ -3,7 +3,7 @@
  */
 
 #define DECLSPEC
-//#define IS_NV //android forbid
+#define IS_NV //android forbid
 
 #define PRIVATE_AS
 
